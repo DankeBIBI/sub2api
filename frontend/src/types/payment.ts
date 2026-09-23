@@ -19,7 +19,16 @@ export type OrderStatus =
   | 'REFUNDED'
   | 'REFUND_FAILED'
 
-export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' | 'stripe' | 'easypay' | 'airwallex'
+export type PaymentType =
+  | 'alipay'
+  | 'wxpay'
+  | 'alipay_direct'
+  | 'wxpay_direct'
+  | 'stripe'
+  | 'easypay'
+  | 'airwallex'
+  // 微信虚拟支付(个人主体小程序 · 道具直购)，与后端 payment.TypeWechatXpay 一致
+  | 'wechat_xpay'
 
 export type OrderType = 'balance' | 'subscription'
 

@@ -111,11 +111,12 @@ var pendingOrderStatuses = []string{
 // Key matching is case-insensitive. Non-listed keys (e.g. appId, notifyUrl,
 // stripe publishableKey) are returned in plaintext by the admin GET API.
 var providerSensitiveConfigFields = map[string]map[string]struct{}{
-	payment.TypeEasyPay:   {"pkey": {}},
-	payment.TypeAlipay:    {"privatekey": {}, "publickey": {}, "alipaypublickey": {}},
-	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}},
-	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}},
-	payment.TypeAirwallex: {"apikey": {}, "webhooksecret": {}},
+	payment.TypeEasyPay:    {"pkey": {}},
+	payment.TypeAlipay:     {"privatekey": {}, "publickey": {}, "alipaypublickey": {}},
+	payment.TypeWxpay:      {"privatekey": {}, "apiv3key": {}, "publickey": {}},
+	payment.TypeStripe:     {"secretkey": {}, "webhooksecret": {}},
+	payment.TypeAirwallex:  {"apikey": {}, "webhooksecret": {}},
+	payment.TypeWechatXpay: {"appkey": {}},
 }
 
 // providerPendingOrderProtectedConfigFields lists config keys that cannot be
@@ -128,6 +129,9 @@ var providerPendingOrderProtectedConfigFields = map[string]map[string]struct{}{
 	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}, "appid": {}, "mpappid": {}, "mchid": {}, "publickeyid": {}, "certserial": {}},
 	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}, "currency": {}},
 	payment.TypeAirwallex: {"clientid": {}, "apikey": {}, "webhooksecret": {}, "apibase": {}, "accountid": {}, "currency": {}},
+	// offerId 是虚拟支付的商户身份(已快照进订单),products 决定旧单的
+	// 面额→道具映射,改掉都会让在途订单查单/发货失真。
+	payment.TypeWechatXpay: {"offerid": {}, "appkey": {}, "products": {}},
 }
 
 func isSensitiveProviderConfigField(providerKey, fieldName string) bool {
@@ -179,6 +183,7 @@ func (s *PaymentConfigService) countPendingOrdersByPlan(ctx context.Context, pla
 
 var validProviderKeys = map[string]bool{
 	payment.TypeEasyPay: true, payment.TypeAlipay: true, payment.TypeWxpay: true, payment.TypeStripe: true, payment.TypeAirwallex: true,
+	payment.TypeWechatXpay: true,
 }
 
 func (s *PaymentConfigService) CreateProviderInstance(ctx context.Context, req CreateProviderInstanceRequest) (*dbent.PaymentProviderInstance, error) {

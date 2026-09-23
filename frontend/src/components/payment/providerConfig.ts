@@ -42,6 +42,7 @@ export const PROVIDER_SUPPORTED_TYPES: Record<string, string[]> = {
   wxpay: ['wxpay'],
   stripe: ['card', 'alipay', 'wxpay', 'link'],
   airwallex: ['airwallex'],
+  wechat_xpay: ['wechat_xpay'],
 }
 
 /** Available payment modes for EasyPay providers. */
@@ -110,6 +111,7 @@ export const WEBHOOK_PATHS: Record<string, string> = {
   wxpay: '/api/v1/payment/webhook/wxpay',
   stripe: '/api/v1/payment/webhook/stripe',
   airwallex: '/api/v1/payment/webhook/airwallex',
+  wechat_xpay: '/api/v1/payment/webhook/xpay',
 }
 
 export const RETURN_PATH = '/payment/result'
@@ -160,6 +162,15 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'countryCode', label: '', sensitive: false, defaultValue: 'CN' },
     { key: 'currency', label: '', sensitive: false, defaultValue: 'CNY', hintKey: 'admin.settings.payment.field_paymentCurrencyHint', options: PAYMENT_CURRENCY_OPTIONS },
     { key: 'accountId', label: '', sensitive: false, optional: true, clearable: true, hintKey: 'admin.settings.payment.field_accountIdHint' },
+  ],
+  // 微信虚拟支付(个人主体小程序 · 道具直购)。
+  // products 是「面额(分) → 道具ID」映射，只有配了道具的档位才会出现在充值页。
+  wechat_xpay: [
+    { key: 'offerId', label: '', sensitive: false, hintKey: 'admin.settings.payment.field_offerIdHint' },
+    { key: 'appKey', label: '', sensitive: true, hintKey: 'admin.settings.payment.field_appKeyHint' },
+    { key: 'products', label: '', sensitive: false, hintKey: 'admin.settings.payment.field_productsHint', defaultValue: '{"500":"","1000":"","2000":"","5000":"","10000":""}' },
+    { key: 'env', label: '', sensitive: false, optional: true, defaultValue: '0', hintKey: 'admin.settings.payment.field_envHint' },
+    { key: 'platform', label: '', sensitive: false, optional: true, clearable: true, hintKey: 'admin.settings.payment.field_platformHint' },
   ],
 }
 

@@ -18,6 +18,9 @@ type paymentOrderProviderSnapshot struct {
 	MerchantAppID      string
 	MerchantID         string
 	Currency           string
+	// XpayOpenID 仅微信虚拟支付使用:下单时的付款人 openid。
+	// 查单兜底与发货推送校验都优先用它,而不是回头查 auth_identities。
+	XpayOpenID string
 }
 
 func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSnapshot {
@@ -33,6 +36,7 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 		MerchantAppID:      psSnapshotStringValue(order.ProviderSnapshot["merchant_app_id"]),
 		MerchantID:         psSnapshotStringValue(order.ProviderSnapshot["merchant_id"]),
 		Currency:           psSnapshotStringValue(order.ProviderSnapshot["currency"]),
+		XpayOpenID:         psSnapshotStringValue(order.ProviderSnapshot["xpay_openid"]),
 	}
 	if snapshot.SchemaVersion == 0 &&
 		snapshot.ProviderInstanceID == "" &&
@@ -40,6 +44,7 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 		snapshot.PaymentMode == "" &&
 		snapshot.MerchantAppID == "" &&
 		snapshot.MerchantID == "" &&
+		snapshot.XpayOpenID == "" &&
 		snapshot.Currency == "" {
 		return nil
 	}
@@ -219,6 +224,18 @@ func validateProviderSnapshotMetadata(order *dbent.PaymentOrder, providerKey str
 		}
 		if actual := strings.TrimSpace(metadata["status"]); actual != "" && !strings.EqualFold(actual, "SUCCEEDED") {
 			return fmt.Errorf("airwallex status mismatch: expected SUCCEEDED, got %s", actual)
+		}
+	case payment.TypeWechatXpay:
+		// 虚拟支付没有商户号,能用于对账的就是付款人 openid。
+		// 发货推送里的 OpenId 必须与下单时的付款人一致,否则说明通知串了单。
+		if expected := strings.TrimSpace(snapshot.XpayOpenID); expected != "" {
+			actual := strings.TrimSpace(metadata["xpay_openid"])
+			if actual == "" {
+				return fmt.Errorf("xpay notification missing openid")
+			}
+			if !strings.EqualFold(expected, actual) {
+				return fmt.Errorf("xpay openid mismatch: expected %s, got %s", expected, actual)
+			}
 		}
 	}
 

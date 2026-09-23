@@ -27,7 +27,7 @@ const (
 	checkPaidResultAlreadyPaid = "already_paid"
 	checkPaidResultCancelled   = "cancelled"
 
-	pendingWxpayReconcileLimit = 20
+	pendingProviderReconcileLimit = 20
 )
 
 type checkPaidOptions struct {
@@ -159,7 +159,8 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 		return ""
 	}
 	finishProviderCall := servertiming.ObserveDependency(ctx, "payment")
-	resp, err := prov.QueryOrder(ctx, queryRef)
+	queryCtx := providerQueryContext(ctx, s, o)
+	resp, err := prov.QueryOrder(queryCtx, queryRef)
 	finishProviderCall()
 	if err != nil {
 		slog.Warn("query upstream failed", "orderID", o.ID, "error", err)
@@ -174,7 +175,7 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 				"queryRef": queryRef,
 			})
 			slog.Warn("query upstream returned invalid paid amount", "orderID", o.ID, "queryRef", queryRef, "paid", resp.Amount)
-			retriedResp, retryOK := requeryPaidOrderOnce(ctx, prov, queryRef)
+			retriedResp, retryOK := requeryPaidOrderOnce(providerQueryContext(ctx, s, o), prov, queryRef)
 			if !retryOK {
 				return ""
 			}
@@ -248,7 +249,9 @@ func paymentOrderQueryReference(order *dbent.PaymentOrder, prov payment.Provider
 	}
 
 	switch payment.GetBasePaymentType(providerKey) {
-	case payment.TypeAlipay, payment.TypeEasyPay, payment.TypeWxpay:
+	// 这几家的查单接口都用「商家业务单号」定位订单,而不是平台单号。
+	// 微信虚拟支付的 /xpay/query_order 参数名是 order_id,传的也是 outTradeNo。
+	case payment.TypeAlipay, payment.TypeEasyPay, payment.TypeWxpay, payment.TypeWechatXpay:
 		return strings.TrimSpace(order.OutTradeNo)
 	default:
 		if tradeNo := strings.TrimSpace(order.PaymentTradeNo); tradeNo != "" {
@@ -303,9 +306,13 @@ func (s *PaymentService) VerifyOrderByOutTradeNo(ctx context.Context, outTradeNo
 	return o, nil
 }
 
-// ReconcilePendingWxpayOrders actively checks recent pending WeChat orders so
-// missed provider notifications do not wait until order expiry to fulfill.
-func (s *PaymentService) ReconcilePendingWxpayOrders(ctx context.Context) (int, error) {
+// ReconcilePendingProviderOrders actively checks recent pending orders of providers
+// that expose an outbound query API (WeChat Pay, WeChat virtual payment), so a missed
+// webhook does not wait until order expiry to fulfill.
+//
+// 微信虚拟支付同样必须纳入:用户支付后直接杀掉小程序时,若发货推送丢失就再没有
+// 任何人触发查单,订单会超时掉 —— 钱收了、货没发。
+func (s *PaymentService) ReconcilePendingProviderOrders(ctx context.Context) (int, error) {
 	now := time.Now()
 	orders, err := s.entClient.PaymentOrder.Query().
 		Where(
@@ -316,13 +323,15 @@ func (s *PaymentService) ReconcilePendingWxpayOrders(ctx context.Context) (int, 
 				paymentorder.PaymentTypeHasPrefix(payment.TypeWxpay+"_"),
 				paymentorder.ProviderKeyEQ(payment.TypeWxpay),
 				paymentorder.ProviderKeyHasPrefix(payment.TypeWxpay+"_"),
+				paymentorder.PaymentTypeEQ(payment.TypeWechatXpay),
+				paymentorder.ProviderKeyEQ(payment.TypeWechatXpay),
 			),
 		).
 		Order(dbent.Asc(paymentorder.FieldCreatedAt)).
-		Limit(pendingWxpayReconcileLimit).
+		Limit(pendingProviderReconcileLimit).
 		All(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("query pending wxpay orders: %w", err)
+		return 0, fmt.Errorf("query pending provider orders: %w", err)
 	}
 
 	recovered := 0

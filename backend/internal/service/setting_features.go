@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
 // IsRegistrationEnabled 检查是否开放注册
@@ -545,6 +547,32 @@ func (s *SettingService) GetTencentCaptchaConfig(ctx context.Context) TencentCap
 		return TencentCaptchaConfig{}
 	}
 	return config.Tencent
+}
+
+// IsWechatMinipEnabled 独立开关：微信小程序一键登录是否启用
+func (s *SettingService) IsWechatMinipEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyWechatMinipEnabled)
+	return err == nil && value == "true"
+}
+
+// GetWechatMinipConfig 读取 admin 后台配的小程序 AppID/AppSecret
+func (s *SettingService) GetWechatMinipConfig(ctx context.Context) (appID, appSecret string, err error) {
+	if s == nil || s.settingRepo == nil {
+		return "", "", infraerrors.ServiceUnavailable("SETTING_NOT_READY", "setting service not ready")
+	}
+	values, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeyWechatMinipAppID,
+		SettingKeyWechatMinipAppSecret,
+	})
+	if err != nil {
+		return "", "", infraerrors.InternalServer("WXAPP_SETTING_LOAD_FAILED", "load wechat minip settings failed").WithCause(err)
+	}
+	appID = strings.TrimSpace(values[SettingKeyWechatMinipAppID])
+	appSecret = strings.TrimSpace(values[SettingKeyWechatMinipAppSecret])
+	if appID == "" || appSecret == "" {
+		return "", "", infraerrors.NotFound("WXAPP_NOT_CONFIGURED", "wechat minip appid/secret not configured")
+	}
+	return appID, appSecret, nil
 }
 
 // IsIdentityPatchEnabled 检查是否启用身份补丁（Claude -> Gemini systemInstruction 注入）

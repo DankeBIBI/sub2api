@@ -16,7 +16,11 @@ services:
   # Sub2API Application
   # ===========================================================================
   sub2api:
-    image: weishaw/sub2api:latest
+    # 本地联调改为 build;要切回远端镜像把 build 段删掉、改回 image 即可
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: weishaw/sub2api:local
     container_name: sub2api
     restart: unless-stopped
     security_opt:
@@ -27,15 +31,16 @@ services:
         hard: 100000
     ports:
       - "${BIND_HOST:-0.0.0.0}:${SERVER_PORT:-8080}:8080"
+    # 让容器能用 host.docker.internal 访问宿主机上的服务（例如同机的
+    # image2api web 监听在宿主 80）。Linux 上 Docker 不默认提供这个名字，
+    # 必须显式映射到宿主网关。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Data persistence (config.yaml will be auto-generated here)
       - sub2api_data:/app/data
-      # Optional: Mount custom config.yaml (uncomment and create the file first)
-      # Copy config.example.yaml to config.yaml, modify it, then uncomment:
+      # 可选:挂载自定义 config.yaml(取消下一行注释并把 config.example.yaml 拷成 config.yaml)
       # - ./config.yaml:/app/data/config.yaml
-      # Optional: Mount a custom Codex instructions template file, then point
-      # gateway.forced_codex_instructions_template_file at /app/data/codex-instructions.md.tmpl
-      # in config.yaml.
       # - ./codex-instructions.md.tmpl:/app/data/codex-instructions.md.tmpl:ro
     environment:
       # =======================================================================

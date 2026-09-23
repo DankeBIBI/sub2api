@@ -310,6 +310,11 @@ const (
 	SettingKeyWeChatConnectRedirectURL         = "wechat_connect_redirect_url"
 	SettingKeyWeChatConnectFrontendRedirectURL = "wechat_connect_frontend_redirect_url"
 
+	// WeChat Minip 微信小程序登录设置（独立于公众号/开放平台 OAuth）
+	SettingKeyWechatMinipEnabled   = "wechat_minip_enabled"
+	SettingKeyWechatMinipAppID     = "wechat_minip_app_id"
+	SettingKeyWechatMinipAppSecret = "wechat_minip_app_secret"
+
 	// Generic OIDC OAuth 登录设置
 	SettingKeyOIDCConnectEnabled              = "oidc_connect_enabled"
 	SettingKeyOIDCConnectProviderName         = "oidc_connect_provider_name"

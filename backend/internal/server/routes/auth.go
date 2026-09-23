@@ -236,6 +236,10 @@ func RegisterAuthRoutes(
 			}),
 			h.Auth.CreateDingTalkOAuthAccount,
 		)
+		// 微信小程序一键登录/注册（独立开关 wechat_minip_enabled）
+		auth.POST("/wxapp/login", rateLimiter.LimitWithOptions("wxapp-login", 20, time.Minute, middleware.RateLimitOptions{
+			FailureMode: middleware.RateLimitFailClose,
+		}), h.Auth.WxAppLogin)
 	}
 
 	// 公开设置（无需认证）：每次请求都会查询 DB，按客户端 IP 兜底限流，

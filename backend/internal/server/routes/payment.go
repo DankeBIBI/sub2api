@@ -33,6 +33,8 @@ func RegisterPaymentRoutes(
 		authenticated.GET("/checkout-info", paymentHandler.GetCheckoutInfo)
 		authenticated.GET("/plans", paymentHandler.GetPlans)
 		authenticated.GET("/limits", paymentHandler.GetLimits)
+		// 微信虚拟支付的可用充值档位(只返回已映射道具的面额)
+		authenticated.GET("/xpay/products", paymentHandler.GetXpayProducts)
 
 		orders := authenticated.Group("/orders")
 		{
@@ -66,6 +68,8 @@ func RegisterPaymentRoutes(
 		webhook.POST("/wxpay", webhookHandler.WxpayNotify)
 		webhook.POST("/stripe", webhookHandler.StripeWebhook)
 		webhook.POST("/airwallex", webhookHandler.AirwallexWebhook)
+		// 微信虚拟支付(xpay)发货推送配置在 MP 后台【虚拟支付 → 基本配置】
+		webhook.POST("/xpay", webhookHandler.XpayNotify)
 	}
 
 	// --- Admin payment endpoints (admin auth) ---

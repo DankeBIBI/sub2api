@@ -567,7 +567,7 @@ func TestCancelOrderStillClosesUnpaidUpstreamOrder(t *testing.T) {
 	require.Equal(t, OrderStatusCancelled, reloaded.Status)
 }
 
-func TestReconcilePendingWxpayOrdersBackfillsPaidOrder(t *testing.T) {
+func TestReconcilePendingProviderOrdersBackfillsPaidOrder(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
 
@@ -655,7 +655,7 @@ func TestReconcilePendingWxpayOrdersBackfillsPaidOrder(t *testing.T) {
 		providersLoaded: true,
 	}
 
-	recovered, err := svc.ReconcilePendingWxpayOrders(ctx)
+	recovered, err := svc.ReconcilePendingProviderOrders(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, recovered)
 	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)

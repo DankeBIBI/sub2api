@@ -90,6 +90,21 @@ func (h *PaymentHandler) GetPlans(c *gin.Context) {
 	response.Success(c, result)
 }
 
+// GetXpayProducts 返回微信虚拟支付当前可用的固定充值面额(元)。
+//
+// 虚拟支付只能按 MP 后台预先建好的道具售卖,因此这里只返回已在渠道配置里
+// 映射过道具的档位 —— 前端据此隐藏点下去必定失败的入口。
+// GET /api/v1/payment/xpay/products
+func (h *PaymentHandler) GetXpayProducts(c *gin.Context) {
+	amounts, err := h.configService.GetXpayPresetAmounts(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{"amounts": amounts})
+}
+
 // GetCheckoutInfo returns all data the payment page needs in a single call:
 // payment methods with limits, subscription plans, and configuration.
 // GET /api/v1/payment/checkout-info
@@ -228,14 +243,17 @@ func (h *PaymentHandler) GetLimits(c *gin.Context) {
 
 // CreateOrderRequest is the request body for creating a payment order.
 type CreateOrderRequest struct {
-	Amount            float64 `json:"amount"`
-	PaymentType       string  `json:"payment_type" binding:"required"`
-	OpenID            string  `json:"openid"`
-	WechatResumeToken string  `json:"wechat_resume_token"`
-	ReturnURL         string  `json:"return_url"`
-	PaymentSource     string  `json:"payment_source"`
-	OrderType         string  `json:"order_type"`
-	PlanID            int64   `json:"plan_id"`
+	Amount      float64 `json:"amount"`
+	PaymentType string  `json:"payment_type" binding:"required"`
+	OpenID      string  `json:"openid"`
+	// JsCode 是 wx.login / uni.login 现场拿到的 code,仅微信虚拟支付需要:
+	// 服务端用它换 openid + session_key 来签 signature。
+	JsCode            string `json:"js_code"`
+	WechatResumeToken string `json:"wechat_resume_token"`
+	ReturnURL         string `json:"return_url"`
+	PaymentSource     string `json:"payment_source"`
+	OrderType         string `json:"order_type"`
+	PlanID            int64  `json:"plan_id"`
 	// IsMobile lets the frontend declare its mobile status directly. When
 	// nil we fall back to User-Agent heuristics (which miss iPadOS / some
 	// embedded browsers that strip the "Mobile" keyword).
@@ -276,6 +294,7 @@ func (h *PaymentHandler) CreateOrder(c *gin.Context) {
 		Amount:          req.Amount,
 		PaymentType:     req.PaymentType,
 		OpenID:          req.OpenID,
+		JsCode:          req.JsCode,
 		ClientIP:        c.ClientIP(),
 		IsMobile:        mobile,
 		IsWeChatBrowser: isWeChatBrowser(c),

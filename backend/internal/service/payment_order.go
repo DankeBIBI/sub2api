@@ -100,6 +100,26 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if oauthResp != nil {
 		return oauthResp, nil
 	}
+	// 微信虚拟支付需要付款人 openid 与用户态 session_key,两者都由前端现拿的
+	// js_code 向微信换取;放在建单之前做,避免换不到时库里留下一个死单。
+	if sel != nil && sel.ProviderKey == payment.TypeWechatXpay {
+		// 道具单价由 MP 后台固定,任何手续费都会把实付金额推离道具价,
+		// 下单必定命中不了道具。这种配置冲突要在建单前就拦住。
+		if feeRate > 0 {
+			return nil, infraerrors.BadRequest(
+				"XPAY_FEE_RATE_CONFLICT",
+				"wechat virtual payment requires a zero recharge fee rate",
+			)
+		}
+
+		openID, sessionKey, resolveErr := s.resolveXpayPayer(ctx, req.JsCode)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+
+		req.OpenID = openID
+		req.SessionKey = sessionKey
+	}
 	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, sel)
 	if err != nil {
 		return nil, err
@@ -305,6 +325,18 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 		}
 		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
 	}
+	if providerKey == payment.TypeWechatXpay {
+		// 虚拟支付的「商户身份」就是 OfferID:同一渠道换 OfferID 后旧单不应再对账。
+		if offerID := strings.TrimSpace(sel.Config["offerId"]); offerID != "" {
+			snapshot["merchant_id"] = offerID
+		}
+		snapshot["currency"] = payment.DefaultPaymentCurrency
+		// 记下付款人 openid:查单兜底与发货推送校验都以它为准,
+		// 不再依赖 auth_identities 里可能与下单时不一致的记录。
+		if payerOpenID := strings.TrimSpace(req.OpenID); payerOpenID != "" {
+			snapshot["xpay_openid"] = payerOpenID
+		}
+	}
 
 	if len(snapshot) == 1 {
 		return nil
@@ -442,9 +474,11 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	providerReq := buildProviderCreatePaymentRequest(CreateOrderRequest{
 		PaymentType: req.PaymentType,
 		OpenID:      req.OpenID,
-		ClientIP:    req.ClientIP,
-		IsMobile:    req.IsMobile,
-		ReturnURL:   providerReturnURL,
+		// 微信虚拟支付签 signature 必须用这个 session_key，漏传会导致下单必定失败
+		SessionKey: req.SessionKey,
+		ClientIP:   req.ClientIP,
+		IsMobile:   req.IsMobile,
+		ReturnURL:  providerReturnURL,
 	}, sel, outTradeNo, payAmountStr, subject)
 	providerReq.AlipayMobilePrecreate = shouldUseAlipayMobilePrecreate(req, cfg, sel)
 	finishProviderCall := servertiming.ObserveDependency(ctx, "payment")
@@ -518,6 +552,7 @@ func buildProviderCreatePaymentRequest(req CreateOrderRequest, sel *payment.Inst
 		Subject:            subject,
 		ReturnURL:          req.ReturnURL,
 		OpenID:             strings.TrimSpace(req.OpenID),
+		SessionKey:         strings.TrimSpace(req.SessionKey),
 		ClientIP:           req.ClientIP,
 		IsMobile:           req.IsMobile,
 		InstanceSubMethods: selectedInstanceSupportedTypes(sel),
@@ -749,6 +784,7 @@ func buildCreateOrderResponse(order *dbent.PaymentOrder, req CreateOrderRequest,
 		OAuth:        pr.OAuth,
 		JSAPI:        pr.JSAPI,
 		JSAPIPayload: pr.JSAPI,
+		Xpay:         pr.Xpay,
 		ExpiresAt:    order.ExpiresAt,
 		PaymentMode:  sel.PaymentMode,
 	}

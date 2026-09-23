@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,10 @@ const maxWebhookBodySize = 1 << 20
 
 // webhookLogTruncateLen is the maximum length of raw body logged on verify failure.
 const webhookLogTruncateLen = 200
+
+// xpayDeliverSuccessXML 是虚拟支付发货推送的应答报文。
+// ErrCode 非 0 会让平台重试(最多 15 次)。
+const xpayDeliverSuccessXML = "<xml><ErrCode>0</ErrCode><ErrMsg><![CDATA[success]]></ErrMsg></xml>"
 
 // NewPaymentWebhookHandler creates a new PaymentWebhookHandler.
 func NewPaymentWebhookHandler(paymentService *service.PaymentService, registry *payment.Registry) *PaymentWebhookHandler {
@@ -65,6 +70,12 @@ func (h *PaymentWebhookHandler) StripeWebhook(c *gin.Context) {
 // POST /api/v1/payment/webhook/airwallex
 func (h *PaymentWebhookHandler) AirwallexWebhook(c *gin.Context) {
 	h.handleNotify(c, payment.TypeAirwallex)
+}
+
+// XpayNotify 处理微信虚拟支付的发货推送。
+// POST /api/v1/payment/webhook/xpay
+func (h *PaymentWebhookHandler) XpayNotify(c *gin.Context) {
+	h.handleNotify(c, payment.TypeWechatXpay)
 }
 
 // handleNotify is the shared logic for all provider webhook handlers.
@@ -164,6 +175,14 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
 			return strings.TrimSpace(payload.Data.Object.MerchantOrderID)
 		}
+	case payment.TypeWechatXpay:
+		// 虚拟支付发货推送是 XML,业务单号在 OutTradeNo。
+		var payload struct {
+			OutTradeNo string `xml:"OutTradeNo"`
+		}
+		if err := xml.Unmarshal([]byte(rawBody), &payload); err == nil {
+			return strings.TrimSpace(payload.OutTradeNo)
+		}
 	}
 	// For other providers (Stripe, Alipay direct, WxPay direct), the registry
 	// typically has only one instance, so no instance lookup is needed.
@@ -203,11 +222,13 @@ const (
 
 // writeSuccessResponse 返回各支付服务商要求的成功响应。
 // 微信支付需要 JSON {"code":"SUCCESS","message":"成功"}；
-// Stripe 和空中云汇接受空 200，其它服务商接受纯文本 "success"。
+// 微信虚拟支付需要 XML 应答；Stripe 和空中云汇接受空 200，其它服务商接受纯文本 "success"。
 func writeSuccessResponse(c *gin.Context, providerKey string) {
 	switch providerKey {
 	case payment.TypeWxpay:
 		c.JSON(http.StatusOK, wxpaySuccessResponse{Code: wxpaySuccessCode, Message: wxpaySuccessMessage})
+	case payment.TypeWechatXpay:
+		c.Data(http.StatusOK, "application/xml; charset=utf-8", []byte(xpayDeliverSuccessXML))
 	case payment.TypeStripe, payment.TypeAirwallex:
 		c.String(http.StatusOK, "")
 	default:

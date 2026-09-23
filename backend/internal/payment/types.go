@@ -18,6 +18,10 @@ const (
 	TypeLink         PaymentType = "link"
 	TypeEasyPay      PaymentType = "easypay"
 	TypeAirwallex    PaymentType = "airwallex"
+	// TypeWechatXpay 是微信「虚拟支付」(xpay)。它面向拿不到微信支付商户号的
+	// 个人主体小程序,只支持道具直购(short_series_goods)。
+	// 注意:不要以 alipay / wxpay 为前缀,否则会被 GetBasePaymentType 归到旧渠道。
+	TypeWechatXpay PaymentType = "wechat_xpay"
 )
 
 // Order status constants shared across payment and service layers.
@@ -106,8 +110,11 @@ type CreatePaymentRequest struct {
 	NotifyURL   string // Webhook callback URL
 	ReturnURL   string // Browser redirect URL after payment
 	OpenID      string // WeChat JSAPI payer OpenID when available
-	ClientIP    string // Payer's IP address
-	IsMobile    bool   // Whether the request comes from a mobile device
+	// SessionKey 是小程序 code2Session 返回的用户态会话密钥,微信虚拟支付
+	// 签 signature 时必需。其它渠道忽略该字段。
+	SessionKey string
+	ClientIP   string // Payer's IP address
+	IsMobile   bool   // Whether the request comes from a mobile device
 	// AlipayMobilePrecreate routes a mobile Alipay request through
 	// alipay.trade.precreate instead of alipay.trade.wap.pay.
 	AlipayMobilePrecreate bool
@@ -121,6 +128,8 @@ const (
 	CreatePaymentResultOrderCreated  CreatePaymentResultType = "order_created"
 	CreatePaymentResultOAuthRequired CreatePaymentResultType = "oauth_required"
 	CreatePaymentResultJSAPIReady    CreatePaymentResultType = "jsapi_ready"
+	// CreatePaymentResultXpayReady 表示前端可以用 Xpay 字段调 wx.requestVirtualPayment。
+	CreatePaymentResultXpayReady CreatePaymentResultType = "xpay_ready"
 )
 
 // WechatOAuthInfo describes the next step when WeChat OAuth is required before payment.
@@ -143,6 +152,19 @@ type WechatJSAPIPayload struct {
 	PaySign   string `json:"paySign,omitempty"`
 }
 
+// WechatXpayPayload 是小程序调 wx.requestVirtualPayment 所需的全部参数。
+// 前四个字段可直接展开进该接口的入参。
+type WechatXpayPayload struct {
+	Mode      string `json:"mode"`
+	SignData  string `json:"signData"`
+	PaySig    string `json:"paySig"`
+	Signature string `json:"signature"`
+	// 以下字段不参与支付调用,仅用于前端展示与对账。
+	ProductID  string `json:"productId"`
+	GoodsPrice int64  `json:"goodsPrice"`
+	OutTradeNo string `json:"outTradeNo"`
+}
+
 // CreatePaymentResponse is returned after successfully initiating a payment.
 type CreatePaymentResponse struct {
 	TradeNo      string                  // Third-party transaction ID
@@ -156,6 +178,7 @@ type CreatePaymentResponse struct {
 	ResultType   CreatePaymentResultType // Typed result contract for frontend flows
 	OAuth        *WechatOAuthInfo        // WeChat OAuth bootstrap payload when required
 	JSAPI        *WechatJSAPIPayload     // WeChat JSAPI invocation payload when ready
+	Xpay         *WechatXpayPayload      // WeChat virtual payment payload when ready
 }
 
 // QueryOrderResponse describes the payment status from the upstream provider.
@@ -245,4 +268,14 @@ type CancelableProvider interface {
 // derived from provider configuration for snapshot consistency checks.
 type MerchantIdentityProvider interface {
 	MerchantIdentityMetadata() map[string]string
+}
+
+// PresetAmountProvider 由「只能按固定面额售卖」的渠道实现(如微信虚拟支付:
+// 商品必须在 MP 后台按分预先建好道具)。
+//
+// 服务层据此告诉前台哪些档位真的可用,避免前端展示一个点了也付不了的入口。
+// 返回值为最小货币单位(分)。
+type PresetAmountProvider interface {
+	Provider
+	PresetAmounts() []int64
 }

@@ -73,6 +73,8 @@ const { t } = useI18n()
 const METHOD_ICONS: Record<string, string> = {
   alipay: alipayIcon,
   wxpay: wxpayIcon,
+  // 虚拟支付同样由微信代收，复用微信图标
+  wechat_xpay: wxpayIcon,
   stripe: stripeIcon,
   airwallex: airwallexIcon,
   credit_card: paymentIcon,

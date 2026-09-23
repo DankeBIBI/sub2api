@@ -302,8 +302,10 @@ func TestGatewayRoutesCompositeChatCompletionsWithGrokModelUsesOpenAIGateway(t *
 	}
 }
 
+// Video creation endpoints are Grok / Composite / OpenAI only. Other platforms
+// must keep returning 404 at the platform gate.
 func TestGatewayRoutesNonGrokVideosAreRejectedAtPlatformGate(t *testing.T) {
-	router := newGatewayRoutesTestRouter(service.PlatformOpenAI)
+	router := newGatewayRoutesTestRouter(service.PlatformGemini)
 
 	for _, tc := range []struct {
 		method string
@@ -342,6 +344,34 @@ func TestGatewayRoutesNonGrokVideosAreRejectedAtPlatformGate(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code, "method=%s path=%s", tc.method, tc.path)
 		require.Contains(t, w.Body.String(), "Videos API is not supported for this platform")
+	}
+}
+
+// OpenAI groups route /v1/videos to the openai upstream (image2api) instead of
+// being rejected at the platform gate.
+func TestGatewayRoutesOpenAIVideosAreRegistered(t *testing.T) {
+	router := newGatewayRoutesTestRouter(service.PlatformOpenAI)
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPost, "/v1/videos", `{"model":"veo3","prompt":"waves"}`},
+		{http.MethodPost, "/videos", `{"model":"veo3","prompt":"waves"}`},
+		{http.MethodPost, "/v1/videos/generations", `{"model":"veo3","prompt":"waves"}`},
+		{http.MethodGet, "/v1/videos/request-123", ""},
+		{http.MethodGet, "/videos/request-123", ""},
+		{http.MethodGet, "/v1/videos/request-123/content", ""},
+		{http.MethodGet, "/videos/request-123/content", ""},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.NotEqual(t, http.StatusNotFound, w.Code, "method=%s path=%s", tc.method, tc.path)
+		require.NotContains(t, w.Body.String(), "not supported for this platform")
 	}
 }
 
